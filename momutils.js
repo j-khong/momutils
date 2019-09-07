@@ -1,8 +1,8 @@
 import DevUtils from "@jkhong/devutils";
+import SimpleSchema from "simpl-schema";
 import { Meteor } from "meteor/meteor";
 import { Mongo } from "meteor/mongo";
 import { ReactiveVar } from "meteor/reactive-var";
-import { check } from "meteor/check";
 
 export const name = "momutils";
 
@@ -12,6 +12,13 @@ MomUtils = {
       entity.Model = {
         Classes: {},
         Schemas: {},
+        Coll: {
+          DenyRules: {
+            insert(userId, doc) { return true; },
+            update(userId, doc, fields, modifier) { return true; },
+            remove(userId, doc) { return true; },
+          },
+        },
       };
       if (DevUtils.isSet(collName)) {
         entity.Model.ColName = collName;
@@ -33,11 +40,11 @@ MomUtils = {
           return toSelect(coll, text, value, "text", "id", infilter, i18n);
         },
         getByKey: function (data) {
-          check(data, entity.Model.Schemas.Main);
+          entity.Model.Schemas.Main.validate(data.getData());
           return entity.Model.Col.findOne(data.getKey());
         },
         getById: function (data) {
-          check(data, entity.Model.Schemas.Main);
+          entity.Model.Schemas.Main.validate(data.getData());
           return entity.Model.Col.findOne({ _id: data.getId() });
         },
         find(selector) {
@@ -67,18 +74,33 @@ MomUtils = {
           model.Classes.Main = theclass;
           if (DevUtils.isSet(model.ColName)) {
             model.Col = new Mongo.Collection(model.ColName);
+            if (DevUtils.isNotSet(model.Schemas.Main)) {
+              throw Error("please set a schema (to be attached to mongo collection) in Model.Schemas.Main");
+            }
             model.Col.attachSchema(model.Schemas.Main);
+            model.Col.deny(model.Coll.DenyRules);
           }
         },
       };
     },
     dbClass: class DB {
-      constructor(schema) { this.schema = schema; }
+      constructor(schema, data) {// always pass data struct (e.g. from db), don't pass objects
+        if (!(schema instanceof SimpleSchema)) {
+          throw Error("please provide a Simple schema object");
+        }
+        this.schema = schema;
 
-      checkData() { check(this.data, this.schema); }
+        this.schema.extend(new SimpleSchema({
+          _id: { type: String, regEx: SimpleSchema.RegEx.Id, optional: true },
+        }));
+
+        this.init(data);
+      }
+
+      getSchema() { return this.schema; }
 
       init(data) {
-        check(data, this.schema);
+        this.schema.validate(data);
         this.data = data;
       }
 
